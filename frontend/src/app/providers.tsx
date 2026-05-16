@@ -44,7 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
         defaultChain:       monadTestnet,
         supportedChains:    [monadTestnet],
-        loginMethods:       ['email', 'wallet'],
+        loginMethods:       ['email', 'wallet', 'google', 'twitter'],
         appearance: {
           theme:       'light',
           accentColor: '#6B5CE7',
