@@ -26,13 +26,31 @@ const DEFAULT_PROFILE = {
 
 type CardState = Omit<ApprovalCardProps, "onApprove" | "onReject"> | null;
 
+type AgentName =
+  | "mail"
+  | "wallet"
+  | "opportunity"
+  | "risk"
+  | "calendar"
+  | "social"
+  | "policy";
+
+type AgentActivity = {
+  agent: AgentName;
+  displayName: string;
+  summary: string;
+  status: "ok" | "noop" | "blocked" | "error";
+  durationMs?: number;
+};
+
 export default function Home() {
   const { ready, authenticated, login, logout } = usePrivy();
   const { wallets } = useWallets();
   const wallet = wallets[0];
 
   const [cardState, setCardState] = useState<CardState>(null);
-  const [agentLog, setAgentLog] = useState("");
+  const [activities, setActivities] = useState<AgentActivity[]>([]);
+  const [agentLog, setAgentLog] = useState<React.ReactNode>("");
   const [textInput, setTextInput] = useState("");
   const speakRef = useRef<(text: string) => Promise<void>>(async () => {});
 
@@ -77,6 +95,10 @@ export default function Home() {
 
         if (!res.ok) throw new Error(`Backend error ${res.status}`);
         const data = await res.json();
+
+        if (Array.isArray(data.activities)) {
+          setActivities(data.activities as AgentActivity[]);
+        }
 
         await speakRef.current(data.voiceResponse);
 
@@ -281,7 +303,19 @@ export default function Home() {
             <ApprovalCard
               {...cardState}
               onApprove={(hash) => {
-                setAgentLog(`Settled. TX ${hash.slice(0, 10)}...`);
+                setAgentLog(
+                  <span>
+                    Settled. TX{" "}
+                    <a
+                      href={`https://testnet.monadexplorer.com/tx/${hash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#6B5CE7", textDecoration: "underline", pointerEvents: "auto" }}
+                    >
+                      {hash.slice(0, 10)}...
+                    </a>
+                  </span>
+                );
                 setCardState(null);
               }}
               onReject={() => {
@@ -328,23 +362,33 @@ export default function Home() {
             </button>
 
             <section style={stream}>
-              <DividerLabel label="also today" />
-              <NoteRow
-                agent="mail"
-                headline="Reply drafted for Prometeia"
-                time="14m"
+              <DividerLabel
+                label={activities.length ? "subagents · last run" : "also today"}
               />
-              <NoteRow
-                agent="calendar"
-                headline="Two open slots tomorrow morning"
-                time="1h"
-              />
-              <NoteRow
-                agent="risk"
-                headline="One contract flagged"
-                time="3h"
-                tone="warn"
-              />
+              {activities.length ? (
+                activities.map((a, i) => (
+                  <AgentActivityRow key={`${a.agent}-${i}`} activity={a} />
+                ))
+              ) : (
+                <>
+                  <NoteRow
+                    agent="mail"
+                    headline="Reply drafted for Prometeia"
+                    time="14m"
+                  />
+                  <NoteRow
+                    agent="calendar"
+                    headline="Two open slots tomorrow morning"
+                    time="1h"
+                  />
+                  <NoteRow
+                    agent="risk"
+                    headline="One contract flagged"
+                    time="3h"
+                    tone="warn"
+                  />
+                </>
+              )}
             </section>
 
             <VoiceButton
@@ -474,6 +518,42 @@ function NoteRow({
   );
 }
 
+function AgentActivityRow({ activity }: { activity: AgentActivity }) {
+  const statusTone: Record<AgentActivity["status"], string> = {
+    ok: "var(--tw-ok)",
+    noop: "var(--tw-text-tertiary)",
+    blocked: "var(--tw-warn)",
+    error: "var(--tw-danger)",
+  };
+  const statusLabel: Record<AgentActivity["status"], string> = {
+    ok: "ok",
+    noop: "skipped",
+    blocked: "blocked",
+    error: "error",
+  };
+  const tone = statusTone[activity.status];
+
+  return (
+    <div style={agentActivityRow}>
+      <AgentDot agent={activity.agent} size={8} />
+      <div style={agentActivityBody}>
+        <div style={agentActivityHeader}>
+          <span style={agentActivityName}>{activity.displayName}</span>
+          <span
+            className="tw-mono"
+            style={{ ...agentActivityStatus, color: tone }}
+          >
+            {statusLabel[activity.status]}
+            {typeof activity.durationMs === "number" &&
+              ` · ${activity.durationMs}ms`}
+          </span>
+        </div>
+        <div style={agentActivitySummary}>{activity.summary}</div>
+      </div>
+    </div>
+  );
+}
+
 function BottomDock({ state, onMicPress, onMicRelease, onMicToggle }: {
   state: ReturnType<typeof useVoice>["state"];
   onMicPress: () => void;
@@ -484,9 +564,9 @@ function BottomDock({ state, onMicPress, onMicRelease, onMicToggle }: {
 
   const routes: Record<string, string> = {
     home:     '/',
-    inbox:    '/',
+    inbox:    '/inbox',
     shield:   '/permissions',
-    settings: '/',
+    settings: '/settings',
   };
 
   return (
@@ -743,6 +823,48 @@ const noteHeadline: React.CSSProperties = {
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
+};
+
+const agentActivityRow: React.CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 12,
+  width: "100%",
+  padding: "14px 0",
+  borderBottom: "0.5px solid var(--tw-border-hair)",
+};
+
+const agentActivityBody: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: 4,
+};
+
+const agentActivityHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "baseline",
+  justifyContent: "space-between",
+  gap: 10,
+};
+
+const agentActivityName: React.CSSProperties = {
+  color: "var(--tw-text)",
+  fontSize: 13,
+  fontWeight: 600,
+};
+
+const agentActivityStatus: React.CSSProperties = {
+  fontSize: 10.5,
+  letterSpacing: 0.3,
+  textTransform: "uppercase",
+};
+
+const agentActivitySummary: React.CSSProperties = {
+  color: "var(--tw-text-secondary)",
+  fontSize: 12.5,
+  lineHeight: 1.45,
 };
 
 const noteTime: React.CSSProperties = {
