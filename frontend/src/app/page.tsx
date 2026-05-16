@@ -2,6 +2,7 @@
 
 import { usePrivy, useWallets } from '@privy-io/react-auth';
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ApprovalCard, type ApprovalCardProps } from '../components/approval/ApprovalCard';
 import { DockMicButton, VoiceButton } from '../components/voice/VoiceButton';
 import { AgentDot, Icon, Presence, RiskBadge, TwinOrb } from '../components/ui/TwinyPrimitives';
@@ -216,6 +217,7 @@ export default function Home() {
               transcript={voice.transcript}
               onPress={voice.startRecording}
               onRelease={voice.stopRecording}
+              onToggle={voice.toggleRecording}
             />
           </>
         )}
@@ -242,6 +244,7 @@ export default function Home() {
           state={voice.state}
           onMicPress={voice.startRecording}
           onMicRelease={voice.stopRecording}
+          onMicToggle={voice.toggleRecording}
         />
       </main>
     </Screen>
@@ -286,25 +289,35 @@ function NoteRow({ agent, headline, time, tone }: {
   );
 }
 
-function BottomDock({ state, onMicPress, onMicRelease }: {
+function BottomDock({ state, onMicPress, onMicRelease, onMicToggle }: {
   state: ReturnType<typeof useVoice>['state'];
   onMicPress: () => void;
   onMicRelease: () => void;
+  onMicToggle: () => void;
 }) {
+  const router = useRouter();
+
+  const routes: Record<string, string> = {
+    home:     '/',
+    inbox:    '/',
+    shield:   '/permissions',
+    settings: '/',
+  };
+
   return (
     <nav style={bottomDock} aria-label="Primary">
-      <DockItem icon="home" active />
-      <DockItem icon="inbox" />
+      <DockItem icon="home" active onClick={() => router.push(routes.home)} />
+      <DockItem icon="inbox" onClick={() => router.push(routes.inbox)} />
       <div style={dockCenter}>
-        <DockMicButton state={state} onPress={onMicPress} onRelease={onMicRelease} />
+        <DockMicButton state={state} onPress={onMicPress} onRelease={onMicRelease} onToggle={onMicToggle} />
       </div>
-      <DockItem icon="shield" />
-      <DockItem icon="settings" />
+      <DockItem icon="shield" onClick={() => router.push(routes.shield)} />
+      <DockItem icon="settings" onClick={() => router.push(routes.settings)} />
     </nav>
   );
 }
 
-function DockItem({ icon, active = false }: { icon: 'home' | 'inbox' | 'shield' | 'settings'; active?: boolean }) {
+function DockItem({ icon, active = false, onClick }: { icon: 'home' | 'inbox' | 'shield' | 'settings'; active?: boolean; onClick?: () => void }) {
   const labels = {
     home: 'Today',
     inbox: 'Inbox',
@@ -313,7 +326,7 @@ function DockItem({ icon, active = false }: { icon: 'home' | 'inbox' | 'shield' 
   };
 
   return (
-    <button type="button" aria-label={labels[icon]} className="tw-press" style={{ ...dockItem, color: active ? 'var(--tw-text)' : 'var(--tw-text-tertiary)' }}>
+    <button type="button" aria-label={labels[icon]} onClick={onClick} className="tw-press" style={{ ...dockItem, color: active ? 'var(--tw-text)' : 'var(--tw-text-tertiary)' }}>
       <Icon name={icon} size={20} strokeWidth={active ? 2 : 1.5} />
     </button>
   );

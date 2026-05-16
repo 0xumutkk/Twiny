@@ -22,13 +22,27 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
   const [transcript, setTranscript] = useState('');
   const mediaRecorderRef            = useRef<MediaRecorder | null>(null);
   const chunksRef                   = useRef<Blob[]>([]);
+  const stateRef                    = useRef<VoiceState>('idle');
+
+  // Keep stateRef in sync so callbacks always see current state
+  stateRef.current = state;
 
   const startRecording = useCallback(async () => {
-    if (state !== 'idle') return;
+    // Use ref to avoid stale closure issues with state
+    if (stateRef.current !== 'idle' && stateRef.current !== 'error') return;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+      // Check supported MIME types
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+          ? 'audio/mp4'
+          : '';
+
+      const recorderOptions: MediaRecorderOptions = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(stream, recorderOptions);
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -38,35 +52,50 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         setState('processing');
+        stateRef.current = 'processing';
 
         try {
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const actualMime = mimeType || 'audio/webm';
+          const blob = new Blob(chunksRef.current, { type: actualMime });
           const text = await transcribeAudio(blob);
           setTranscript(text);
           onTranscript(text);
         } catch (err) {
           console.error('[STT error]', err);
           setState('error');
+          stateRef.current = 'error';
         }
       };
 
       mediaRecorderRef.current = recorder;
       recorder.start();
       setState('recording');
+      stateRef.current = 'recording';
     } catch (err) {
       console.error('[Mic error]', err);
       setState('error');
+      stateRef.current = 'error';
     }
-  }, [state, onTranscript]);
+  }, [onTranscript]);
 
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && state === 'recording') {
+    if (mediaRecorderRef.current && stateRef.current === 'recording') {
       mediaRecorderRef.current.stop();
     }
-  }, [state]);
+  }, []);
+
+  /** Toggle: click once to start, click again to stop */
+  const toggleRecording = useCallback(() => {
+    if (stateRef.current === 'recording') {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  }, [startRecording, stopRecording]);
 
   const speak = useCallback(async (text: string) => {
     setState('speaking');
+    stateRef.current = 'speaking';
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
       const res = await fetch(
@@ -86,21 +115,24 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
       audio.onended = () => {
         URL.revokeObjectURL(url);
         setState('idle');
+        stateRef.current = 'idle';
       };
 
       await audio.play();
     } catch (err) {
       console.error('[TTS error]', err);
       setState('idle');
+      stateRef.current = 'idle';
     }
   }, []);
 
   const reset = () => {
     setState('idle');
+    stateRef.current = 'idle';
     setTranscript('');
   };
 
-  return { state, transcript, startRecording, stopRecording, speak, reset };
+  return { state, transcript, startRecording, stopRecording, toggleRecording, speak, reset };
 }
 
 // ── ElevenLabs Scribe v2 transcription ───────────────────────────

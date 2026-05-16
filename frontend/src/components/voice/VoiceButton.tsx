@@ -8,17 +8,18 @@ interface VoiceButtonProps {
   transcript?: string;
   onPress:     () => void;
   onRelease:   () => void;
+  onToggle?:   () => void;
 }
 
 const LABELS: Record<VoiceState, string> = {
-  idle:       'Hold to speak',
-  recording:  'Listening',
+  idle:       'Tap to speak',
+  recording:  'Listening — tap to stop',
   processing: 'Thinking',
   speaking:   'Speaking',
   error:      'Tap to retry',
 };
 
-export function VoiceButton({ state, transcript, onPress, onRelease }: VoiceButtonProps) {
+export function VoiceButton({ state, transcript, onPress, onRelease, onToggle }: VoiceButtonProps) {
   const active = state === 'recording';
   const busy = state === 'processing' || state === 'speaking';
 
@@ -26,11 +27,10 @@ export function VoiceButton({ state, transcript, onPress, onRelease }: VoiceButt
     <section style={wrap}>
       <button
         type="button"
-        onPointerDown={onPress}
-        onPointerUp={onRelease}
-        onPointerCancel={onRelease}
-        onPointerLeave={() => {
-          if (active) onRelease();
+        onClick={onToggle}
+        onPointerDown={(e) => {
+          // Prevent default to avoid text selection on long press
+          e.preventDefault();
         }}
         className="tw-press"
         aria-label="Push to talk"
@@ -43,7 +43,7 @@ export function VoiceButton({ state, transcript, onPress, onRelease }: VoiceButt
         <TwinOrb size={busy ? 60 : 54} listening={active} thinking={busy} />
         <span style={voiceLabel}>{LABELS[state]}</span>
         <span style={voiceHint}>
-          {active ? 'Release when done' : 'Voice opens the daily brief'}
+          {active ? 'Tap again when done' : 'Voice opens the daily brief'}
         </span>
       </button>
 
@@ -77,23 +77,34 @@ function Waveform() {
   );
 }
 
-export function DockMicButton({ state, onPress, onRelease }: Pick<VoiceButtonProps, 'state' | 'onPress' | 'onRelease'>) {
+export function DockMicButton({ state, onPress, onRelease, onToggle }: Pick<VoiceButtonProps, 'state' | 'onPress' | 'onRelease' | 'onToggle'>) {
   const active = state === 'recording';
+  const busy = state === 'processing' || state === 'speaking';
 
   return (
     <button
       type="button"
-      onPointerDown={onPress}
-      onPointerUp={onRelease}
-      onPointerCancel={onRelease}
+      onClick={onToggle}
       className="tw-press"
-      aria-label="Push to talk"
+      aria-label={active ? 'Stop recording' : 'Start recording'}
       style={{
         ...dockMic,
-        boxShadow: active ? '0 0 0 12px rgba(156,142,255,0.18)' : '0 8px 28px rgba(156,142,255,0.55)',
+        boxShadow: active
+          ? '0 0 0 12px rgba(156,142,255,0.18)'
+          : busy
+            ? '0 4px 14px rgba(156,142,255,0.3)'
+            : '0 8px 28px rgba(156,142,255,0.55)',
+        background: active ? 'var(--tw-danger)' : busy ? 'var(--tw-card-elevated)' : 'var(--tw-monad)',
+        animation: busy ? 'tw-pulse-soft 1.6s ease-in-out infinite' : undefined,
       }}
     >
-      <Icon name="mic" size={22} color="#FFFFFF" strokeWidth={1.8} />
+      {active ? (
+        <Icon name="x" size={20} color="#FFFFFF" strokeWidth={2.2} />
+      ) : busy ? (
+        <span style={busySpinner} />
+      ) : (
+        <Icon name="mic" size={22} color="#FFFFFF" strokeWidth={1.8} />
+      )}
     </button>
   );
 }
@@ -158,4 +169,14 @@ const dockMic: React.CSSProperties = {
   color:          '#FFFFFF',
   cursor:         'pointer',
   touchAction:    'none',
+  transition:     'background 0.2s ease, box-shadow 0.2s ease',
+};
+
+const busySpinner: React.CSSProperties = {
+  width:          16,
+  height:         16,
+  borderRadius:   8,
+  border:         '2px solid rgba(255,255,255,0.25)',
+  borderTopColor: '#FFFFFF',
+  animation:      'tw-spin 0.8s linear infinite',
 };
