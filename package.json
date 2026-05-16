@@ -1,10 +1,16 @@
 {
   "name": "twiny",
   "private": true,
-  "workspaces": ["backend", "frontend"],
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
     "dev:frontend": "npm run dev --workspace=frontend",
-    "build": "npm run build --workspace=backend && npm run build --workspace=frontend"
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "npm run test --workspace=frontend",
+    "test:backend": "npm run build --workspace=backend"
   }
 }
