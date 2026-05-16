@@ -270,14 +270,20 @@ function buildVoiceResponse(
   const recommended = opps.filter(o => o.recommended);
   const blocked     = opps.filter(o => o.policyResult.blocked);
 
-  if (recommended.length === 0 && blocked.length === 0) {
-    return `Cüzdan bakiyen ${parseFloat(balance).toFixed(2)} MON. Şu an için uygun bir kampanya bulamadım.`;
+  if (opps.length === 0) {
+    return `Cüzdan bakiyen ${parseFloat(balance).toFixed(2)} MON. Şu an için hiçbir kampanya bulamadım.`;
   }
 
-  if (recommended.length === 0 && blocked.length > 0) {
+  if (recommended.length === 0 && blocked.length === opps.length) {
     return `Cüzdan bakiyen ${parseFloat(balance).toFixed(2)} MON. ${blocked.length} adet kampanya buldum ancak risk ayarlarını aştığı veya güvenlik kurallarına takıldığı için hepsini engelledim. Detayları ekranda görebilirsin.`;
   }
 
-  const top = recommended[0];
+  // If we have opportunities but none are highly recommended and not all are blocked
+  const top = recommended.length > 0 ? recommended[0] : opps.find(o => !o.policyResult.blocked) || opps[0];
+
+  if (recommended.length === 0 && !top.policyResult.blocked) {
+     return `Cüzdanında ${parseFloat(balance).toFixed(2)} MON var. Birkaç kampanya buldum ama puanları düşük olduğu için güçlü bir öneri yapamıyorum. Ekranda görebileceğin en iyi seçenek: ${top.campaign.name}. ${top.explanation}`;
+  }
+
   return `Cüzdanında ${parseFloat(balance).toFixed(2)} MON var. En iyi fırsat: ${top.campaign.name}. ${top.explanation} İşlemi hazırlamam için ekrandan seçebilirsin.`;
 }

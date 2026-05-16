@@ -99,7 +99,7 @@ function score(
   return {
     campaign:    c,
     score:       s,
-    recommended: s >= 60 && !policyResult.blocked,
+    recommended: s >= 50 && !policyResult.blocked,
     policyResult,
     explanation,
   };
