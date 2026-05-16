@@ -1,4 +1,20 @@
-import 'dotenv/config';
+// Load .env by walking up from cwd until we find one. This way the backend
+// can be started from either the workspace root or backend/ without losing
+// env, and we never depend on import.meta (keeps CommonJS-friendly).
+import dotenv from 'dotenv';
+import { existsSync } from 'fs';
+import { resolve, dirname } from 'path';
+(function loadEnv() {
+  let dir = process.cwd();
+  for (let i = 0; i < 5; i++) {
+    const candidate = resolve(dir, '.env');
+    if (existsSync(candidate)) { dotenv.config({ path: candidate }); return; }
+    const parent = dirname(dir);
+    if (parent === dir) return;
+    dir = parent;
+  }
+})();
+
 import express from 'express';
 import cors from 'cors';
 import { orchestrate } from './orchestrator.js';
@@ -216,11 +232,17 @@ app.post('/api/tts', async (req, res) => {
       return;
     }
 
-    const { text } = req.body;
+    const { text, language } = req.body;
     if (!text) { res.status(400).json({ error: 'text required' }); return; }
 
+    // Simple heuristic to detect Turkish if not explicitly provided
+    const isTurkish = language === 'tr' || text.match(/[çğıöşüÇĞIÖŞÜ]/) || text.match(/\b(ve|bir|bu|da|de|mi|mu|mü|için|ile|merhaba|tamam|evet|hayır)\b/i);
+    
+    // Use the Turkish Voice ID if Turkish is detected, else fallback to default
+    const voiceId = isTurkish ? 'Q5n6GDIjpN0pLOlycRFT' : process.env.ELEVENLABS_VOICE_ID;
+
     const ttsRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${process.env.ELEVENLABS_VOICE_ID}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
         method:  'POST',
         headers: {
@@ -229,7 +251,7 @@ app.post('/api/tts', async (req, res) => {
         },
         body: JSON.stringify({
           text,
-          model_id:         'eleven_flash_v2_5',
+          model_id:         'eleven_multilingual_v2', // Multilingual model for better TR support
           voice_settings:   { stability: 0.5, similarity_boost: 0.75 },
         }),
       }
