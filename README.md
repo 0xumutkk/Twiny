@@ -6,11 +6,6 @@
 
 ## Step 1 — Get your API keys (before touching any code)
 
-### Anthropic
-1. Go to https://console.anthropic.com
-2. Create an account and add a payment method
-3. Copy your API key → `ANTHROPIC_API_KEY`
-
 ### ElevenLabs
 1. Go to https://elevenlabs.io and create an account
 2. Go to Profile → API Keys → copy your key → `ELEVENLABS_API_KEY`
@@ -177,7 +172,7 @@ twiny/
 ├── backend/
 │   └── src/
 │       ├── index.ts                 ← Express API server
-│       ├── orchestrator.ts          ← Anthropic routing layer
+│       ├── orchestrator.ts          ← Local deterministic routing layer
 │       ├── policy/engine.ts         ← Deterministic rule engine (no LLM)
 │       └── agents/
 │           ├── walletAgent.ts       ← Reads balance + prepares claim TX
@@ -206,7 +201,7 @@ twiny/
 | Not enough MON for deploy | Get more from faucet; need ~15 MON minimum |
 | Privy login doesn't work | Check `NEXT_PUBLIC_PRIVY_APP_ID` in frontend `.env.local` |
 | Voice not transcribing | Check `ELEVENLABS_API_KEY` in backend; allow mic in browser |
-| Backend 500 errors | Check `ANTHROPIC_API_KEY` is set and has credits |
+| Backend 500 errors | Check backend logs and required `.env` values |
 | Contract not found | Paste contract address into both `.env` files after deploy |
 
 ---

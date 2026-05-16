@@ -6,7 +6,7 @@
  */
 
 import type { ClaimableReward } from './walletAgent.js';
-import { evaluatePolicy, type AgentAction } from '../policy/engine.js';
+import { evaluatePolicy, type AgentAction, type SourceType } from '../policy/engine.js';
 
 export interface UserProfile {
   interests:        string[];      // e.g. ['defi', 'tooling', 'ai', 'gaming']
@@ -27,9 +27,10 @@ export function runOpportunityAgent(
   campaigns: ClaimableReward[],
   profile: UserProfile,
   walletAddress: string,
-  contractAddress?: string
+  contractAddress?: string,
+  source: SourceType = 'user_command'
 ): ScoredOpportunity[] {
-  const scored = campaigns.map(c => score(c, profile, walletAddress, contractAddress));
+  const scored = campaigns.map(c => score(c, profile, walletAddress, contractAddress, source));
 
   // Sort by score descending; blocked ones go to the bottom
   return scored.sort((a, b) => {
@@ -43,12 +44,13 @@ function score(
   c: ClaimableReward,
   profile: UserProfile,
   walletAddress: string,
-  contractAddress?: string
+  contractAddress: string | undefined,
+  source: SourceType
 ): ScoredOpportunity {
   // ── Build action for policy check ─────────────────────────────
   const action: AgentAction = {
     type:                'claim_reward',
-    source:              'user_command',
+    source,
     campaignId:          c.campaignId,
     contractAddress,
     isNewDeploy:         false,

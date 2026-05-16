@@ -26,8 +26,8 @@ Sunumda iddialari ikiye ayirmaliyiz: **MVP'de calisan guvenlik sinirlari** ve **
 
 MVP'de calisan sinirlar:
 
-- LLM sadece kullanici komutunu siniflandirir; action execute etmez.
-- Backend Anthropic'e raw wallet, mail veya takvim datasini gondermez; sadece transcript ve minimum profil ozeti ile intent routing yapar.
+- Intent routing local/deterministik calisir; action execute etmez.
+- Backend raw wallet, mail veya takvim datasini LLM servislerine gondermez.
 - Wallet Agent sadece balance/campaign okur ve claim transaction calldata'si hazirlar.
 - Frontend transaction'i Privy `sendTransaction` ile kullaniciya imzalatir; Twiny signed payload veya private key gormez.
 - Policy Engine AI cagrisi yapmaz; deterministik if/else kurallariyla external content, unlimited approval, money movement ve communication action'larini kontrol eder.
@@ -184,7 +184,6 @@ Kisa cevap:
 
 Bugun cloud kullanimlari:
 
-- Anthropic: intent classification icin transcript/minimum profile.
 - ElevenLabs: STT/TTS, backend proxy arkasinda.
 - Monad RPC/indexing: public chain state/campaign data.
 - Privy: wallet auth/signing layer.

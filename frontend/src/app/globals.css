@@ -1,0 +1,190 @@
+/* Twiny mobile tokens - adapted from the provided prototype files. */
+:root {
+  --tw-paper: #000000;
+  --tw-paper-2: #0a0a0a;
+  --tw-card: #1c1c1e;
+  --tw-card-warm: #232325;
+  --tw-card-elevated: #2c2c2e;
+  --tw-ink-stamp: #ffffff;
+  --tw-text: #ffffff;
+  --tw-text-secondary: rgba(235, 235, 245, 0.68);
+  --tw-text-tertiary: rgba(235, 235, 245, 0.36);
+  --tw-text-inverse: #000000;
+  --tw-border: rgba(255, 255, 255, 0.08);
+  --tw-border-strong: rgba(255, 255, 255, 0.16);
+  --tw-border-hair: rgba(255, 255, 255, 0.07);
+  --tw-monad: #9c8eff;
+  --tw-monad-deep: #b8aeff;
+  --tw-monad-soft: rgba(156, 142, 255, 0.18);
+  --tw-monad-tint: rgba(156, 142, 255, 0.08);
+  --tw-ok: #32d74b;
+  --tw-ok-soft: rgba(50, 215, 75, 0.16);
+  --tw-warn: #ff9f0a;
+  --tw-warn-soft: rgba(255, 159, 10, 0.16);
+  --tw-danger: #ff453a;
+  --tw-danger-soft: rgba(255, 69, 58, 0.14);
+  --tw-serif: "Instrument Serif", "New York", ui-serif, Georgia, serif;
+  --tw-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Geist", "Inter", system-ui, sans-serif;
+  --tw-mono: "SF Mono", ui-monospace, "Geist Mono", "JetBrains Mono", Menlo, monospace;
+  --tw-r-sm: 10px;
+  --tw-r: 14px;
+  --tw-r-lg: 22px;
+  --tw-r-xl: 28px;
+  --tw-r-pill: 999px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  background: var(--tw-paper);
+  color: var(--tw-text);
+}
+
+body {
+  font-family: var(--tw-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tw-screen {
+  min-height: 100dvh;
+  width: 100%;
+  background: var(--tw-paper);
+  color: var(--tw-text);
+  overflow-x: hidden;
+}
+
+.tw-mobile {
+  width: 100%;
+  max-width: 430px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  position: relative;
+  padding: 62px 16px 34px;
+}
+
+.tw-serif {
+  font-family: var(--tw-serif);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.tw-mono {
+  font-family: var(--tw-mono);
+  font-feature-settings: "tnum";
+}
+
+.tw-press {
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.15s ease, opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.tw-press:active {
+  transform: scale(0.985);
+  opacity: 0.86;
+}
+
+.tw-card {
+  background: var(--tw-card);
+  border: 0.5px solid var(--tw-border);
+  border-radius: var(--tw-r-lg);
+}
+
+.tw-hr {
+  width: 100%;
+  height: 0.5px;
+  background: var(--tw-border-hair);
+}
+
+.tw-orb {
+  position: relative;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 28%, #d8ccff 0%, transparent 42%),
+    radial-gradient(circle at 70% 70%, #7558f0 0%, #2a1c7a 70%);
+  box-shadow: 0 4px 16px rgba(89, 71, 212, 0.25), inset 0 -2px 6px rgba(255, 255, 255, 0.15);
+}
+
+.tw-orb::after {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55), transparent 50%);
+  pointer-events: none;
+}
+
+.tw-orb::before {
+  content: "";
+  position: absolute;
+  inset: -10%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(156, 142, 255, 0.25), transparent 65%);
+  pointer-events: none;
+}
+
+.tw-field {
+  width: 100%;
+  border: 0.5px solid var(--tw-border);
+  color: var(--tw-text);
+  background: var(--tw-card);
+  border-radius: var(--tw-r);
+  outline: none;
+}
+
+.tw-field::placeholder {
+  color: var(--tw-text-tertiary);
+}
+
+@keyframes tw-pulse-soft {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.06); }
+}
+
+@keyframes tw-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes tw-wave {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes tw-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tw-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes tw-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes tw-ring {
+  0% { transform: scale(0.6); opacity: 0.85; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@keyframes tw-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(1); box-shadow: 0 0 6px rgba(156, 142, 255, 0.35); }
+  50% { opacity: 1; transform: scale(1.25); box-shadow: 0 0 14px rgba(156, 142, 255, 0.85); }
+}

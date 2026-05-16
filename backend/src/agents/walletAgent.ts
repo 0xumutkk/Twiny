@@ -5,18 +5,10 @@
  * NEVER signs or broadcasts — that is always the user's action via Privy.
  */
 
-import { createPublicClient, encodeFunctionData, http, formatEther, type Address } from 'viem';
-import { evaluatePolicy, type AgentAction } from '../policy/engine.js';
-
-// Monad testnet chain definition for viem
-const monadTestnet = {
-  id: 10143,
-  name: 'Monad Testnet',
-  nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-  rpcUrls: {
-    default: { http: [process.env.MONAD_TESTNET_RPC ?? 'https://testnet-rpc.monad.xyz'] },
-  },
-} as const;
+import { encodeFunctionData, formatEther, isAddress, parseEther, type Address } from 'viem';
+import { evaluatePolicy, type AgentAction, type SourceType } from '../policy/engine.js';
+import { getMonadClient } from './chain.js';
+import { assessClaimRisk, type RiskAssessment } from './riskAgent.js';
 
 // Minimal ABI — only functions Wallet Agent needs
 const campaignAbi = [
@@ -63,15 +55,9 @@ const campaignAbi = [
   },
 ] as const;
 
-const client = createPublicClient({
-  chain: monadTestnet,
-  transport: http(),
-});
-
 export interface WalletAgentResult {
-  balance: string;           // formatted MON
+  balance: string;
   claimableRewards: ClaimableReward[];
-  preparedAction?: PreparedClaim;
 }
 
 export interface ClaimableReward {
@@ -87,37 +73,43 @@ export interface ClaimableReward {
 export interface PreparedClaim {
   campaignId: number;
   contractAddress: string;
-  calldata: string;          // hex encoded for Privy useSendTransaction
+  calldata: string;
   rewardMON: string;
   policyResult: ReturnType<typeof evaluatePolicy>;
+  riskAssessment?: RiskAssessment;
 }
 
-export async function runWalletAgent(
-  walletAddress: string,
-  selectedCampaignId?: number
-): Promise<WalletAgentResult> {
+export interface PreparedTransfer {
+  kind: 'native_transfer';
+  network: 'Monad testnet';
+  recipient: string;
+  valueMON: string;
+  valueWei: string;
+  txTo: string;
+  txValue: string;
+  txData: '0x';
+  policyResult: ReturnType<typeof evaluatePolicy>;
+  warnings: string[];
+}
+
+// ── Step 1: Read-only wallet snapshot ────────────────────────────
+export async function runWalletAgent(walletAddress: string): Promise<WalletAgentResult> {
+  const client          = getMonadClient();
   const contractAddress = process.env.CAMPAIGN_CONTRACT_ADDRESS as Address | undefined;
 
-  // ── Read balance ──────────────────────────────────────────────
   const balanceWei = await client.getBalance({ address: walletAddress as Address });
-  const balance = formatEther(balanceWei);
+  const balance    = formatEther(balanceWei);
 
   if (!contractAddress) {
-    // No contract yet — return mock data for early development
-    return {
-      balance,
-      claimableRewards: getMockCampaigns(),
-    };
+    return { balance, claimableRewards: getMockCampaigns() };
   }
 
-  // ── Read campaigns from contract ──────────────────────────────
   const rawCampaigns = await client.readContract({
     address: contractAddress,
     abi: campaignAbi,
     functionName: 'getCampaigns',
   }) as any[];
 
-  // ── Check which ones the user can still claim ─────────────────
   const claimable: ClaimableReward[] = [];
   for (const c of rawCampaigns) {
     const eligible = await client.readContract({
@@ -128,7 +120,7 @@ export async function runWalletAgent(
     });
     if (eligible) {
       claimable.push({
-        campaignId: Number(c.id),
+        campaignId:       Number(c.id),
         name:             c.name,
         description:      c.description,
         rewardMON:        formatEther(c.rewardPerUser),
@@ -139,48 +131,154 @@ export async function runWalletAgent(
     }
   }
 
-  // ── Prepare transaction for the selected campaign ─────────────
-  let preparedAction: PreparedClaim | undefined;
-  if (selectedCampaignId) {
-    const target = claimable.find(c => c.campaignId === selectedCampaignId);
-    if (target) {
-      // Build action for Policy Engine evaluation
-      const action: AgentAction = {
-        type:             'claim_reward',
-        source:           'user_command',
-        campaignId:       target.campaignId,
-        contractAddress,
-        isNewDeploy:      false,
-        isUnlimitedApproval: false,
-        rewardAmount:     parseFloat(target.rewardMON),
-        estimatedMinutes: target.estimatedMinutes,
-        dataShared:       ['wallet address'],
-        cloudUsed:        false,
-        description:      `Claim ${target.rewardMON} MON reward from "${target.name}"`,
-      };
-
-      const policyResult = evaluatePolicy(action);
-
-      preparedAction = {
-        campaignId:      target.campaignId,
-        contractAddress,
-        calldata: encodeClaim(target.campaignId),
-        rewardMON:       target.rewardMON,
-        policyResult,
-      };
-    }
-  }
-
-  return { balance, claimableRewards: claimable, preparedAction };
+  return { balance, claimableRewards: claimable };
 }
 
-// Encode claimReward(campaignId) — matches TwinyCampaign.sol
+// ── Step 2: Explicit, user-selected prepare ──────────────────────
+// Decoupled from the read step so the LLM cannot silently prepare an
+// arbitrary campaign — the frontend must POST the chosen campaignId after
+// the user picks it from the opportunity list.
+export async function prepareClaim(params: {
+  walletAddress: string;
+  campaignId:    number;
+  source:        SourceType;
+}): Promise<PreparedClaim | { error: string }> {
+  const { walletAddress, campaignId, source } = params;
+  const contractAddress = process.env.CAMPAIGN_CONTRACT_ADDRESS as Address | undefined;
+  if (!contractAddress) {
+    return { error: 'CAMPAIGN_CONTRACT_ADDRESS not configured' };
+  }
+
+  const snapshot = await runWalletAgent(walletAddress);
+  const target   = snapshot.claimableRewards.find(c => c.campaignId === campaignId);
+  if (!target) {
+    return { error: `Campaign ${campaignId} is not claimable for this wallet` };
+  }
+
+  const action: AgentAction = {
+    type:                'claim_reward',
+    source,
+    campaignId:          target.campaignId,
+    contractAddress,
+    isNewDeploy:         false,
+    isUnlimitedApproval: false,
+    rewardAmount:        parseFloat(target.rewardMON),
+    estimatedMinutes:    target.estimatedMinutes,
+    dataShared:          ['wallet address'],
+    cloudUsed:           false,
+    description:         `Claim ${target.rewardMON} MON reward from "${target.name}"`,
+  };
+
+  const policyResult    = evaluatePolicy(action);
+  const riskAssessment  = policyResult.blocked
+    ? undefined
+    : await assessClaimRisk(walletAddress, contractAddress, target.campaignId);
+
+  return {
+    campaignId:      target.campaignId,
+    contractAddress,
+    calldata:        encodeClaim(target.campaignId),
+    rewardMON:       target.rewardMON,
+    policyResult,
+    riskAssessment,
+  };
+}
+
+export async function prepareTransfer(params: {
+  walletAddress: string;
+  recipient:     string;
+  amountMON:     string | number;
+  network:       string;
+  source:        SourceType;
+}): Promise<PreparedTransfer | { error: string }> {
+  const { walletAddress, recipient, amountMON, network, source } = params;
+
+  if (source !== 'user_command') {
+    return { error: 'Transfers can only be prepared from a direct user command.' };
+  }
+
+  if (!isMonadNetwork(network)) {
+    return { error: 'Only Monad testnet native MON transfers are supported in this demo.' };
+  }
+
+  if (!isAddress(walletAddress) || !isAddress(recipient)) {
+    return { error: 'A valid 0x wallet address is required for both sender and recipient.' };
+  }
+
+  const normalizedAmount = String(amountMON).replace(',', '.').trim();
+  if (!/^\d+(\.\d+)?$/.test(normalizedAmount) || Number(normalizedAmount) <= 0) {
+    return { error: 'amountMON must be a positive MON amount.' };
+  }
+
+  let valueWei: bigint;
+  try {
+    valueWei = parseEther(normalizedAmount);
+  } catch {
+    return { error: 'amountMON is not a valid MON amount.' };
+  }
+
+  const client = getMonadClient();
+  const balanceWei = await client.getBalance({ address: walletAddress as Address });
+  const warnings: string[] = [];
+
+  if (balanceWei < valueWei) {
+    return {
+      error: `Insufficient balance. Wallet has ${Number(formatEther(balanceWei)).toFixed(4)} MON.`,
+    };
+  }
+
+  const action: AgentAction = {
+    type: 'send_transaction',
+    source,
+    contractAddress: recipient,
+    isNewDeploy: false,
+    isUnlimitedApproval: false,
+    rewardAmount: Number(normalizedAmount),
+    dataShared: ['wallet address', 'recipient address', 'transfer amount'],
+    cloudUsed: false,
+    description: `Send ${normalizedAmount} MON to ${recipient} on Monad testnet`,
+  };
+
+  const policyResult = evaluatePolicy(action);
+
+  try {
+    const gas = await client.estimateGas({
+      account: walletAddress as Address,
+      to: recipient as Address,
+      value: valueWei,
+    });
+    const gasPrice = await client.getGasPrice();
+    const estimatedFee = Number(formatEther(gas * gasPrice)).toFixed(6);
+    warnings.push(`Estimated network fee: ${estimatedFee} MON.`);
+  } catch (err: any) {
+    warnings.push(`Gas estimation unavailable: ${String(err?.shortMessage ?? err?.message ?? err)}`);
+  }
+
+  return {
+    kind: 'native_transfer',
+    network: 'Monad testnet',
+    recipient,
+    valueMON: normalizedAmount,
+    valueWei: valueWei.toString(),
+    txTo: recipient,
+    txValue: `0x${valueWei.toString(16)}`,
+    txData: '0x',
+    policyResult,
+    warnings: [...policyResult.warnings, ...warnings],
+  };
+}
+
 function encodeClaim(campaignId: number): string {
   return encodeFunctionData({
     abi: campaignAbi,
     functionName: 'claimReward',
     args: [BigInt(campaignId)],
   });
+}
+
+function isMonadNetwork(network: string): boolean {
+  const value = network.trim().toLowerCase();
+  return value === 'monad' || value === 'monad testnet' || value === 'monad-testnet';
 }
 
 function getMockCampaigns(): ClaimableReward[] {

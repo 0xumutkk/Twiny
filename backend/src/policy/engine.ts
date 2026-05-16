@@ -5,6 +5,8 @@
  * This file never calls any AI API. All rules are explicit if/else logic.
  */
 
+import { lookupConnectorOp, isConnectorBlocked } from '../connectors/manifests.js';
+
 export type RiskLevel = 'low' | 'medium' | 'high' | 'blocked';
 export type ActionType =
   | 'claim_reward'
@@ -14,7 +16,24 @@ export type ActionType =
   | 'send_dm'
   | 'token_approval'
   | 'read_data'
-  | 'prepare_draft';
+  | 'prepare_draft'
+  // Always-blocked types (architecture plan §3) — listed here so callers
+  // get a type-checked block instead of a silent pass.
+  | 'export_private_key'
+  | 'bulk_data_export'
+  | 'auto_transfer'
+  | 'delete_email'
+  | 'auto_post';
+
+// Hardcoded "always blocked" set — cannot be overridden by LLM output or
+// connector config (architecture plan §3).
+const ALWAYS_BLOCKED: ReadonlySet<ActionType> = new Set<ActionType>([
+  'export_private_key',
+  'bulk_data_export',
+  'auto_transfer',
+  'delete_email',
+  'auto_post',
+]);
 
 export type SourceType = 'user_command' | 'email_content' | 'web_content' | 'campaign_data';
 
@@ -42,6 +61,34 @@ export interface PolicyResult {
 
 export function evaluatePolicy(action: AgentAction): PolicyResult {
   const warnings: string[] = [];
+
+  // ── RULE 0a: Connector manifest cross-check ───────────────────
+  const op = lookupConnectorOp(action.type);
+  if (op && isConnectorBlocked(op.connector, op.op)) {
+    return {
+      requiresApproval: true,
+      blocked: true,
+      blockReason:
+        `Connector "${op.connector}" does not permit operation "${op.op}". ` +
+        `This is enforced by the connector manifest and cannot be overridden.`,
+      riskLevel: 'blocked',
+      warnings: [],
+    };
+  }
+
+  // ── RULE 0b: Hardcoded always-blocked action types ────────────
+  if (ALWAYS_BLOCKED.has(action.type)) {
+    return {
+      requiresApproval: true,
+      blocked: true,
+      blockReason:
+        `Action type "${action.type}" is permanently blocked by Twiny's policy. ` +
+        `Private keys, bulk exports, auto-transfers, mail deletions and ` +
+        `automated public posts are never executable.`,
+      riskLevel: 'blocked',
+      warnings: [],
+    };
+  }
 
   // ── RULE 1: External content is always untrusted ──────────────
   if (action.source === 'email_content' || action.source === 'web_content') {

@@ -1,73 +1,100 @@
 'use client';
 
 import { type VoiceState } from '../../hooks/useVoice';
+import { Icon, TwinOrb } from '../ui/TwinyPrimitives';
 
 interface VoiceButtonProps {
-  state:          VoiceState;
-  transcript?:    string;
-  onPress:        () => void;
-  onRelease:      () => void;
+  state:       VoiceState;
+  transcript?: string;
+  onPress:     () => void;
+  onRelease:   () => void;
 }
 
 const LABELS: Record<VoiceState, string> = {
   idle:       'Hold to speak',
   recording:  'Listening',
-  processing: 'Analysing',
+  processing: 'Thinking',
   speaking:   'Speaking',
-  error:      'Mic error',
-};
-
-const COLORS: Record<VoiceState, string> = {
-  idle:       '#4F46E5',
-  recording:  '#D64B4B',
-  processing: '#C98722',
-  speaking:   '#008D69',
-  error:      '#D64B4B',
-};
-
-const SYMBOLS: Record<VoiceState, string> = {
-  idle:       'Mic',
-  recording:  'Rec',
-  processing: '...',
-  speaking:   'Talk',
-  error:      'Retry',
+  error:      'Tap to retry',
 };
 
 export function VoiceButton({ state, transcript, onPress, onRelease }: VoiceButtonProps) {
-  const color  = COLORS[state];
   const active = state === 'recording';
+  const busy = state === 'processing' || state === 'speaking';
 
   return (
     <section style={wrap}>
       <button
+        type="button"
         onPointerDown={onPress}
         onPointerUp={onRelease}
         onPointerCancel={onRelease}
         onPointerLeave={() => {
           if (active) onRelease();
         }}
+        className="tw-press"
         aria-label="Push to talk"
         style={{
-          ...voicePill,
-          background: color,
-          boxShadow:  active ? `0 0 0 12px ${color}26` : '0 14px 34px rgba(35, 45, 33, 0.12)',
-          transform:  active ? 'scale(1.02)' : 'scale(1)',
+          ...voiceButton,
+          borderColor: active ? 'rgba(156, 142, 255, 0.5)' : 'var(--tw-border)',
+          background: active ? 'var(--tw-monad-soft)' : 'var(--tw-card)',
         }}
       >
-        <span style={voiceSymbol}>{SYMBOLS[state]}</span>
+        <TwinOrb size={busy ? 60 : 54} listening={active} thinking={busy} />
         <span style={voiceLabel}>{LABELS[state]}</span>
+        <span style={voiceHint}>
+          {active ? 'Release when done' : 'Voice opens the daily brief'}
+        </span>
       </button>
 
+      {active && <Waveform />}
+
       {transcript && state !== 'idle' && (
-        <div style={transcriptPill}>
+        <div style={transcriptBubble} className="tw-serif">
           &ldquo;{transcript}&rdquo;
         </div>
       )}
-
-      <div style={privacyPill}>
-        Local wallet control. Voice uses the backend transcription proxy.
-      </div>
     </section>
+  );
+}
+
+function Waveform() {
+  return (
+    <div style={waveform} aria-hidden="true">
+      {[12, 18, 28, 22, 14, 24, 20, 30, 16, 22, 14].map((height, index) => (
+        <div
+          key={`${height}-${index}`}
+          style={{
+            width: 3,
+            height,
+            borderRadius: 2,
+            background: 'var(--tw-monad)',
+            animation: `tw-wave 0.9s ease-in-out ${index * 0.07}s infinite`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function DockMicButton({ state, onPress, onRelease }: Pick<VoiceButtonProps, 'state' | 'onPress' | 'onRelease'>) {
+  const active = state === 'recording';
+
+  return (
+    <button
+      type="button"
+      onPointerDown={onPress}
+      onPointerUp={onRelease}
+      onPointerCancel={onRelease}
+      className="tw-press"
+      aria-label="Push to talk"
+      style={{
+        ...dockMic,
+        boxShadow: active ? '0 0 0 12px rgba(156,142,255,0.18)' : '0 8px 28px rgba(156,142,255,0.55)',
+      }}
+    >
+      <Icon name="mic" size={22} color="#FFFFFF" strokeWidth={1.8} />
+    </button>
   );
 }
 
@@ -76,65 +103,59 @@ const wrap: React.CSSProperties = {
   flexDirection: 'column',
   alignItems:    'center',
   gap:           14,
-  width:         '100%',
 };
 
-const voicePill: React.CSSProperties = {
-  width:          'min(100%, 300px)',
-  minHeight:      118,
-  borderRadius:   999,
-  border:         'none',
-  cursor:         'pointer',
-  transition:     'box-shadow 0.15s, transform 0.15s, background 0.15s',
+const voiceButton: React.CSSProperties = {
+  width:          '100%',
+  minHeight:      176,
+  borderRadius:   'var(--tw-r-xl)',
+  border:         '0.5px solid var(--tw-border)',
+  color:          'var(--tw-text)',
   display:        'flex',
   flexDirection:  'column',
   alignItems:     'center',
   justifyContent: 'center',
-  gap:            8,
-  color:          '#FFFFFF',
+  gap:            12,
+  padding:        22,
   touchAction:    'none',
-  userSelect:     'none',
-};
-
-const voiceSymbol: React.CSSProperties = {
-  minWidth:      54,
-  height:        34,
-  borderRadius:  999,
-  display:       'flex',
-  alignItems:    'center',
-  justifyContent:'center',
-  background:    'rgba(255,255,255,0.20)',
-  fontSize:      12,
-  fontWeight:    900,
 };
 
 const voiceLabel: React.CSSProperties = {
-  fontSize:   20,
-  lineHeight: 1.1,
-  fontWeight: 900,
+  fontSize:   17,
+  lineHeight: 1,
+  fontWeight: 600,
 };
 
-const transcriptPill: React.CSSProperties = {
-  fontSize:     13,
-  color:        '#171717',
-  background:   '#FFFFFF',
-  border:       '1px solid #D9E0D5',
-  borderRadius: 999,
-  padding:      '10px 16px',
-  maxWidth:     340,
-  textAlign:    'center',
-  lineHeight:   1.45,
-  fontWeight:   600,
+const voiceHint: React.CSSProperties = {
+  color:    'var(--tw-text-tertiary)',
+  fontSize: 12,
 };
 
-const privacyPill: React.CSSProperties = {
-  fontSize:     11,
-  color:        '#6B6F66',
-  textAlign:    'center',
-  lineHeight:   1.45,
-  borderRadius: 999,
-  padding:      '8px 12px',
-  background:   '#EEF5FF',
-  maxWidth:     300,
-  fontWeight:   700,
+const waveform: React.CSSProperties = {
+  display:    'flex',
+  alignItems: 'center',
+  gap:        4,
+  height:     32,
+};
+
+const transcriptBubble: React.CSSProperties = {
+  color:      'var(--tw-text)',
+  fontSize:   22,
+  lineHeight: 1.25,
+  textAlign:  'center',
+  padding:    '6px 18px 0',
+};
+
+const dockMic: React.CSSProperties = {
+  width:          58,
+  height:         58,
+  borderRadius:   29,
+  background:     'var(--tw-monad)',
+  border:         '4px solid var(--tw-paper)',
+  display:        'flex',
+  alignItems:     'center',
+  justifyContent: 'center',
+  color:          '#FFFFFF',
+  cursor:         'pointer',
+  touchAction:    'none',
 };
