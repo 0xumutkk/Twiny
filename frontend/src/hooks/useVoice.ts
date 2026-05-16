@@ -34,15 +34,8 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Check supported MIME types
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : MediaRecorder.isTypeSupported('audio/mp4')
-          ? 'audio/mp4'
-          : '';
-
-      const recorderOptions: MediaRecorderOptions = mimeType ? { mimeType } : {};
-      const recorder = new MediaRecorder(stream, recorderOptions);
+      const mimeType = getSupportedMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -55,15 +48,18 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
         stateRef.current = 'processing';
 
         try {
-          const actualMime = mimeType || 'audio/webm';
-          const blob = new Blob(chunksRef.current, { type: actualMime });
+          const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' });
           const text = await transcribeAudio(blob);
           setTranscript(text);
-          onTranscript(text);
+          await onTranscript(text);
         } catch (err) {
-          console.error('[STT error]', err);
+          console.error('[STT/transcript error]', err);
           setState('error');
           stateRef.current = 'error';
+        } finally {
+          // If onTranscript completed without transitioning away from 'processing'
+          // (e.g. backend error that skips speak), reset to idle.
+          setState(prev => prev === 'processing' ? 'idle' : prev);
         }
       };
 
@@ -112,15 +108,14 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
       const url       = URL.createObjectURL(audioBlob);
       const audio     = new Audio(url);
 
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        setState('idle');
-        stateRef.current = 'idle';
-      };
-
-      await audio.play();
+      await new Promise<void>((resolve) => {
+        audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.play().catch(resolve);
+      });
     } catch (err) {
       console.error('[TTS error]', err);
+    } finally {
       setState('idle');
       stateRef.current = 'idle';
     }
@@ -133,6 +128,17 @@ export function useVoice({ onTranscript }: UseVoiceOptions) {
   };
 
   return { state, transcript, startRecording, stopRecording, toggleRecording, speak, reset };
+}
+
+// ── MIME type detection (audio/webm not supported on Safari) ──────
+function getSupportedMimeType(): string {
+  const candidates = ['audio/webm', 'audio/mp4', 'audio/ogg'];
+  for (const type of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return '';
 }
 
 // ── ElevenLabs Scribe v2 transcription ───────────────────────────

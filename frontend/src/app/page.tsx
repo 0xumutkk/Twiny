@@ -41,44 +41,111 @@ export default function Home() {
     setAgentLog('Thinking across mail, wallet and policy...');
     setCardState(null);
 
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001'}/api/agent/run`,
-        {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            transcript:    text,
-            walletAddress: wallet.address,
-            profile:       DEFAULT_PROFILE,
-          }),
-        }
-      );
+      const res = await fetch(`${backendUrl}/api/agent/run`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          transcript:    text,
+          walletAddress: wallet.address,
+          profile:       DEFAULT_PROFILE,
+        }),
+      });
 
       if (!res.ok) throw new Error(`Backend error ${res.status}`);
       const data = await res.json();
 
       await speakRef.current(data.voiceResponse);
 
-      const top = data.opportunities?.[0];
-      if (top) {
-        const policy = top.policyResult;
-        const campaign = top.campaign;
+      // ── Transfer path ─────────────────────────────────────────
+      if (data.intent === 'prepare_transfer' && data.transferRequest) {
+        const tr = data.transferRequest;
+        if (tr.recipient && tr.amountMON && tr.network === 'Monad testnet') {
+          try {
+            const prepRes = await fetch(`${backendUrl}/api/wallet/prepare-transfer`, {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body:    JSON.stringify({
+                walletAddress: wallet.address,
+                recipient:     tr.recipient,
+                amountMON:     tr.amountMON,
+                network:       tr.network,
+              }),
+            });
+            if (prepRes.ok) {
+              const prepared = await prepRes.json();
+              if (!prepared.error) {
+                const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+                setCardState({
+                  campaignName:     `Send ${tr.amountMON} MON`,
+                  rewardMON:        tr.amountMON,
+                  estimatedMinutes: 1,
+                  riskLevel:        prepared.policyResult?.riskLevel ?? 'low',
+                  dataShared:       ['wallet address', 'recipient address', 'transfer amount'],
+                  onChainAction:    `transfer(to=${short(tr.recipient)}, value=${tr.amountMON} MON)`,
+                  cloudUsed:        false,
+                  blocked:          prepared.policyResult?.blocked ?? false,
+                  blockReason:      prepared.policyResult?.blockReason,
+                  warnings:         prepared.warnings ?? [],
+                  txTo:             prepared.txTo,
+                  txData:           prepared.txData,
+                  txValue:          prepared.txValue,
+                });
+              }
+            }
+          } catch {
+            // prepare-transfer failed silently; voice response already played
+          }
+        }
 
-        setCardState({
-          campaignName:     campaign.name,
-          rewardMON:        campaign.rewardMON,
-          estimatedMinutes: campaign.estimatedMinutes,
-          riskLevel:        campaign.riskLevel as 'low' | 'medium' | 'high',
-          dataShared:       ['wallet address'],
-          onChainAction:    `claimReward(campaignId=${campaign.campaignId})`,
-          cloudUsed:        false,
-          blocked:          policy.blocked,
-          blockReason:      policy.blockReason,
-          warnings:         policy.warnings,
-          txTo:             process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
-          txData:           data.topAction?.calldata,
-        });
+      // ── Claim / opportunity path ───────────────────────────────
+      } else {
+        const top = data.opportunities?.[0];
+        if (top) {
+          const policy   = top.policyResult;
+          const campaign = top.campaign;
+          let txTo: string | undefined;
+          let txData: string | undefined;
+
+          if (!policy.blocked) {
+            try {
+              const prepRes = await fetch(`${backendUrl}/api/wallet/prepare-claim`, {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({
+                  walletAddress: wallet.address,
+                  campaignId:    campaign.campaignId,
+                }),
+              });
+              if (prepRes.ok) {
+                const prepared = await prepRes.json();
+                if (!prepared.error) {
+                  txTo   = prepared.contractAddress;
+                  txData = prepared.calldata;
+                }
+              }
+            } catch {
+              // prepare-claim failed; card will show with disabled approve button
+            }
+          }
+
+          setCardState({
+            campaignName:     campaign.name,
+            rewardMON:        campaign.rewardMON,
+            estimatedMinutes: campaign.estimatedMinutes,
+            riskLevel:        campaign.riskLevel as 'low' | 'medium' | 'high',
+            dataShared:       ['wallet address'],
+            onChainAction:    `claimReward(campaignId=${campaign.campaignId})`,
+            cloudUsed:        false,
+            blocked:          policy.blocked,
+            blockReason:      policy.blockReason,
+            warnings:         policy.warnings,
+            txTo,
+            txData,
+          });
+        }
       }
 
       setAgentLog(data.voiceResponse);

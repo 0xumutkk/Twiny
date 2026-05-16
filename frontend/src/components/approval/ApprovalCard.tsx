@@ -19,6 +19,7 @@ export interface ApprovalCardProps {
   warnings?:        string[];
   txTo?:            string;
   txData?:          string;
+  txValue?:         string;           // hex string for native MON transfers e.g. "0x..."
   onApprove?:       (txHash: string) => void;
   onReject?:        () => void;
 }
@@ -28,7 +29,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
     campaignName, rewardMON, estimatedMinutes, riskLevel,
     dataShared, onChainAction, cloudUsed,
     blocked, blockReason, warnings = [],
-    txTo, txData, onApprove, onReject,
+    txTo, txData, txValue, onApprove, onReject,
   } = props;
 
   const { sendTransaction } = useSendTransaction();
@@ -42,12 +43,14 @@ export function ApprovalCard(props: ApprovalCardProps) {
     setStatus('signing');
     try {
       const receipt = await sendTransaction({
-        to:   txTo   as `0x${string}`,
-        data: txData as `0x${string}`,
+        to:    txTo   as `0x${string}`,
+        data:  txData as `0x${string}`,
+        ...(txValue ? { value: BigInt(txValue) } : {}),
       });
-      setTxHash(receipt.transactionHash);
+      const hash = receipt.transactionHash ?? (receipt as unknown as { hash: string }).hash;
+      setTxHash(hash);
       setStatus('done');
-      onApprove?.(receipt.transactionHash);
+      onApprove?.(hash);
     } catch (err) {
       console.error('[tx error]', err);
       setStatus('error');
@@ -153,16 +156,16 @@ export function ApprovalCard(props: ApprovalCardProps) {
         <button
           type="button"
           onClick={handleApprove}
-          disabled={blocked || !txTo}
+          disabled={blocked || !txTo || !txData}
           className="tw-press"
           style={{
             ...approveButton,
-            background: blocked || !txTo ? 'rgba(255,69,58,0.18)' : 'var(--tw-ink-stamp)',
-            color: blocked || !txTo ? 'var(--tw-danger)' : 'var(--tw-text-inverse)',
-            cursor: blocked || !txTo ? 'not-allowed' : 'pointer',
+            background: blocked || !txTo || !txData ? 'rgba(255,69,58,0.18)' : 'var(--tw-ink-stamp)',
+            color: blocked || !txTo || !txData ? 'var(--tw-danger)' : 'var(--tw-text-inverse)',
+            cursor: blocked || !txTo || !txData ? 'not-allowed' : 'pointer',
           }}
         >
-          <Icon name="lock" size={15} strokeWidth={2} color={blocked || !txTo ? 'var(--tw-danger)' : 'var(--tw-text-inverse)'} />
+          <Icon name="lock" size={15} strokeWidth={2} color={blocked || !txTo || !txData ? 'var(--tw-danger)' : 'var(--tw-text-inverse)'} />
           {blocked ? 'Blocked by policy' : 'Approve in wallet'}
         </button>
       </div>
