@@ -1,21 +1,30 @@
-'use client';
+"use client";
 
-import { usePrivy, useWallets } from '@privy-io/react-auth';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ApprovalCard, type ApprovalCardProps } from '../components/approval/ApprovalCard';
-import { DockMicButton, VoiceButton } from '../components/voice/VoiceButton';
-import { AgentDot, Icon, Presence, RiskBadge, TwinOrb } from '../components/ui/TwinyPrimitives';
-import { useVoice } from '../hooks/useVoice';
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ApprovalCard,
+  type ApprovalCardProps,
+} from "../components/approval/ApprovalCard";
+import { DockMicButton, VoiceButton } from "../components/voice/VoiceButton";
+import {
+  AgentDot,
+  Icon,
+  Presence,
+  RiskBadge,
+  TwinOrb,
+} from "../components/ui/TwinyPrimitives";
+import { useVoice } from "../hooks/useVoice";
 
 const DEFAULT_PROFILE = {
-  interests:     ['defi', 'tooling', 'ai'],
-  riskTolerance: 'low' as const,
-  minRewardMON:  0.5,
-  maxMinutes:    10,
+  interests: ["defi", "tooling", "ai"],
+  riskTolerance: "low" as const,
+  minRewardMON: 0.5,
+  maxMinutes: 10,
 };
 
-type CardState = (Omit<ApprovalCardProps, 'onApprove' | 'onReject'>) | null;
+type CardState = Omit<ApprovalCardProps, "onApprove" | "onReject"> | null;
 
 export default function Home() {
   const { ready, authenticated, login, logout } = usePrivy();
@@ -23,137 +32,164 @@ export default function Home() {
   const wallet = wallets[0];
 
   const [cardState, setCardState] = useState<CardState>(null);
-  const [agentLog, setAgentLog] = useState('');
-  const [textInput, setTextInput] = useState('');
+  const [agentLog, setAgentLog] = useState("");
+  const [textInput, setTextInput] = useState("");
   const speakRef = useRef<(text: string) => Promise<void>>(async () => {});
 
-  const shortWallet = wallet?.address ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}` : 'No wallet';
+  const shortWallet = wallet?.address
+    ? `${wallet.address.slice(0, 6)}...${wallet.address.slice(-4)}`
+    : "No wallet";
   const today = useMemo(() => {
-    return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date()).replace(',', ' ·');
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    })
+      .format(new Date())
+      .replace(",", " ·");
   }, []);
 
-  const handleTranscript = useCallback(async (text: string) => {
-    if (!wallet?.address) {
-      setAgentLog('Connect a wallet before asking Twiny to prepare an action.');
-      return;
-    }
+  const handleTranscript = useCallback(
+    async (text: string) => {
+      if (!wallet?.address) {
+        setAgentLog(
+          "Connect a wallet before asking Twiny to prepare an action."
+        );
+        return;
+      }
 
-    setAgentLog('Thinking across mail, wallet and policy...');
-    setCardState(null);
+      setAgentLog("Thinking across mail, wallet and policy...");
+      setCardState(null);
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+      const backendUrl =
+        process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 
-    try {
-      const res = await fetch(`${backendUrl}/api/agent/run`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          transcript:    text,
-          walletAddress: wallet.address,
-          profile:       DEFAULT_PROFILE,
-        }),
-      });
+      try {
+        const res = await fetch(`${backendUrl}/api/agent/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transcript: text,
+            walletAddress: wallet.address,
+            profile: DEFAULT_PROFILE,
+          }),
+        });
 
-      if (!res.ok) throw new Error(`Backend error ${res.status}`);
-      const data = await res.json();
+        if (!res.ok) throw new Error(`Backend error ${res.status}`);
+        const data = await res.json();
 
-      await speakRef.current(data.voiceResponse);
+        await speakRef.current(data.voiceResponse);
 
-      // ── Transfer path ─────────────────────────────────────────
-      if (data.intent === 'prepare_transfer' && data.transferRequest) {
-        const tr = data.transferRequest;
-        if (tr.recipient && tr.amountMON && tr.network === 'Monad testnet') {
-          try {
-            const prepRes = await fetch(`${backendUrl}/api/wallet/prepare-transfer`, {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({
-                walletAddress: wallet.address,
-                recipient:     tr.recipient,
-                amountMON:     tr.amountMON,
-                network:       tr.network,
-              }),
-            });
-            if (prepRes.ok) {
-              const prepared = await prepRes.json();
-              if (!prepared.error) {
-                const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-                setCardState({
-                  campaignName:     `Send ${tr.amountMON} MON`,
-                  rewardMON:        tr.amountMON,
-                  estimatedMinutes: 1,
-                  riskLevel:        prepared.policyResult?.riskLevel ?? 'low',
-                  dataShared:       ['wallet address', 'recipient address', 'transfer amount'],
-                  onChainAction:    `transfer(to=${short(tr.recipient)}, value=${tr.amountMON} MON)`,
-                  cloudUsed:        false,
-                  blocked:          prepared.policyResult?.blocked ?? false,
-                  blockReason:      prepared.policyResult?.blockReason,
-                  warnings:         prepared.warnings ?? [],
-                  txTo:             prepared.txTo,
-                  txData:           prepared.txData,
-                  txValue:          prepared.txValue,
-                });
-              }
-            }
-          } catch {
-            // prepare-transfer failed silently; voice response already played
-          }
-        }
-
-      // ── Claim / opportunity path ───────────────────────────────
-      } else {
-        const top = data.opportunities?.[0];
-        if (top) {
-          const policy   = top.policyResult;
-          const campaign = top.campaign;
-          let txTo: string | undefined;
-          let txData: string | undefined;
-
-          if (!policy.blocked) {
+        // ── Transfer path ─────────────────────────────────────────
+        if (data.intent === "prepare_transfer" && data.transferRequest) {
+          const tr = data.transferRequest;
+          if (tr.recipient && tr.amountMON && tr.network === "Monad testnet") {
             try {
-              const prepRes = await fetch(`${backendUrl}/api/wallet/prepare-claim`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({
-                  walletAddress: wallet.address,
-                  campaignId:    campaign.campaignId,
-                }),
-              });
+              const prepRes = await fetch(
+                `${backendUrl}/api/wallet/prepare-transfer`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    walletAddress: wallet.address,
+                    recipient: tr.recipient,
+                    amountMON: tr.amountMON,
+                    network: tr.network,
+                  }),
+                }
+              );
               if (prepRes.ok) {
                 const prepared = await prepRes.json();
                 if (!prepared.error) {
-                  txTo   = prepared.contractAddress;
-                  txData = prepared.calldata;
+                  const short = (a: string) =>
+                    `${a.slice(0, 6)}…${a.slice(-4)}`;
+                  setCardState({
+                    campaignName: `Send ${tr.amountMON} MON`,
+                    rewardMON: tr.amountMON,
+                    estimatedMinutes: 1,
+                    riskLevel: prepared.policyResult?.riskLevel ?? "low",
+                    dataShared: [
+                      "wallet address",
+                      "recipient address",
+                      "transfer amount",
+                    ],
+                    onChainAction: `transfer(to=${short(tr.recipient)}, value=${
+                      tr.amountMON
+                    } MON)`,
+                    cloudUsed: false,
+                    blocked: prepared.policyResult?.blocked ?? false,
+                    blockReason: prepared.policyResult?.blockReason,
+                    warnings: prepared.warnings ?? [],
+                    txTo: prepared.txTo,
+                    txData: prepared.txData,
+                    txValue: prepared.txValue,
+                  });
                 }
               }
             } catch {
-              // prepare-claim failed; card will show with disabled approve button
+              // prepare-transfer failed silently; voice response already played
             }
           }
 
-          setCardState({
-            campaignName:     campaign.name,
-            rewardMON:        campaign.rewardMON,
-            estimatedMinutes: campaign.estimatedMinutes,
-            riskLevel:        campaign.riskLevel as 'low' | 'medium' | 'high',
-            dataShared:       ['wallet address'],
-            onChainAction:    `claimReward(campaignId=${campaign.campaignId})`,
-            cloudUsed:        false,
-            blocked:          policy.blocked,
-            blockReason:      policy.blockReason,
-            warnings:         policy.warnings,
-            txTo,
-            txData,
-          });
-        }
-      }
+          // ── Claim / opportunity path ───────────────────────────────
+        } else {
+          const top = data.opportunities?.[0];
+          if (top) {
+            const policy = top.policyResult;
+            const campaign = top.campaign;
+            let txTo: string | undefined;
+            let txData: string | undefined;
 
-      setAgentLog(data.voiceResponse);
-    } catch (err) {
-      console.error(err);
-      setAgentLog('Agent pipeline error. Check the backend console.');
-    }
-  }, [wallet?.address]);
+            if (!policy.blocked) {
+              try {
+                const prepRes = await fetch(
+                  `${backendUrl}/api/wallet/prepare-claim`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      walletAddress: wallet.address,
+                      campaignId: campaign.campaignId,
+                    }),
+                  }
+                );
+                if (prepRes.ok) {
+                  const prepared = await prepRes.json();
+                  if (!prepared.error) {
+                    txTo = prepared.contractAddress;
+                    txData = prepared.calldata;
+                  }
+                }
+              } catch {
+                // prepare-claim failed; card will show with disabled approve button
+              }
+            }
+
+            setCardState({
+              campaignName: campaign.name,
+              rewardMON: campaign.rewardMON,
+              estimatedMinutes: campaign.estimatedMinutes,
+              riskLevel: campaign.riskLevel as "low" | "medium" | "high",
+              dataShared: ["wallet address"],
+              onChainAction: `claimReward(campaignId=${campaign.campaignId})`,
+              cloudUsed: false,
+              blocked: policy.blocked,
+              blockReason: policy.blockReason,
+              warnings: policy.warnings,
+              txTo,
+              txData,
+            });
+          }
+        }
+
+        setAgentLog(data.voiceResponse);
+      } catch (err) {
+        console.error(err);
+        setAgentLog("Agent pipeline error. Check the backend console.");
+      }
+    },
+    [wallet?.address]
+  );
 
   const voice = useVoice({ onTranscript: handleTranscript });
   speakRef.current = voice.speak;
@@ -162,7 +198,7 @@ export default function Home() {
     const command = textInput.trim();
     if (!command) return;
     handleTranscript(command);
-    setTextInput('');
+    setTextInput("");
   };
 
   if (!ready) {
@@ -182,7 +218,9 @@ export default function Home() {
         <main className="tw-mobile" style={onboarding}>
           <div style={onboardingTop}>
             <Presence tone="alive" />
-            <span className="tw-mono" style={stepText}>01 / 04</span>
+            <span className="tw-mono" style={stepText}>
+              01 / 04
+            </span>
           </div>
 
           <div style={onboardingHero}>
@@ -191,11 +229,17 @@ export default function Home() {
               Your twin lives with you.
             </h1>
             <p style={onboardingCopy}>
-              Twiny reads, reasons and prepares wallet actions. Your wallet signs every transaction.
+              Twiny reads, reasons and prepares wallet actions. Your wallet
+              signs every transaction.
             </p>
           </div>
 
-          <button type="button" onClick={login} className="tw-press" style={primaryButton}>
+          <button
+            type="button"
+            onClick={login}
+            className="tw-press"
+            style={primaryButton}
+          >
             Connect Wallet
             <Icon name="arrow-right" size={16} strokeWidth={2.2} />
           </button>
@@ -208,8 +252,10 @@ export default function Home() {
     <Screen>
       <main className="tw-mobile">
         <header style={topBar}>
-          <span className="tw-mono" style={dateText}>{today}</span>
-          <Presence tone={cardState?.blocked ? 'warn' : 'alive'} />
+          <span className="tw-mono" style={dateText}>
+            {today}
+          </span>
+          <Presence tone={cardState?.blocked ? "warn" : "alive"} />
         </header>
 
         <section style={walletStrip}>
@@ -220,7 +266,12 @@ export default function Home() {
               <div style={walletSub}>on-device</div>
             </div>
           </div>
-          <button type="button" onClick={logout} className="tw-press" style={walletButton}>
+          <button
+            type="button"
+            onClick={logout}
+            className="tw-press"
+            style={walletButton}
+          >
             {shortWallet}
           </button>
         </section>
@@ -234,7 +285,7 @@ export default function Home() {
                 setCardState(null);
               }}
               onReject={() => {
-                setAgentLog('Action rejected. No changes made.');
+                setAgentLog("Action rejected. No changes made.");
                 setCardState(null);
               }}
             />
@@ -249,7 +300,11 @@ export default function Home() {
 
             <button
               type="button"
-              onClick={() => handleTranscript('Check my mail and wallet. Anything I should act on today?')}
+              onClick={() =>
+                handleTranscript(
+                  "Check my mail and wallet. Anything I should act on today?"
+                )
+              }
               className="tw-press tw-card"
               style={featuredAction}
             >
@@ -274,9 +329,22 @@ export default function Home() {
 
             <section style={stream}>
               <DividerLabel label="also today" />
-              <NoteRow agent="mail" headline="Reply drafted for Prometeia" time="14m" />
-              <NoteRow agent="calendar" headline="Two open slots tomorrow morning" time="1h" />
-              <NoteRow agent="risk" headline="One contract flagged" time="3h" tone="warn" />
+              <NoteRow
+                agent="mail"
+                headline="Reply drafted for Prometeia"
+                time="14m"
+              />
+              <NoteRow
+                agent="calendar"
+                headline="Two open slots tomorrow morning"
+                time="1h"
+              />
+              <NoteRow
+                agent="risk"
+                headline="One contract flagged"
+                time="3h"
+                tone="warn"
+              />
             </section>
 
             <VoiceButton
@@ -296,14 +364,30 @@ export default function Home() {
             value={textInput}
             onChange={(event) => setTextInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') submitTextInput();
+              if (event.key === "Enter") submitTextInput();
             }}
             placeholder="Type a command"
             className="tw-field"
             style={composerInput}
           />
-          <button type="button" onClick={submitTextInput} disabled={!textInput.trim()} className="tw-press" style={textInput.trim() ? sendButton : sendButtonDisabled} aria-label="Send command">
-            <Icon name="arrow-right" size={17} strokeWidth={2.3} color={textInput.trim() ? 'var(--tw-text-inverse)' : 'var(--tw-text-tertiary)'} />
+          <button
+            type="button"
+            onClick={submitTextInput}
+            disabled={!textInput.trim()}
+            className="tw-press"
+            style={textInput.trim() ? sendButton : sendButtonDisabled}
+            aria-label="Send command"
+          >
+            <Icon
+              name="arrow-right"
+              size={17}
+              strokeWidth={2.3}
+              color={
+                textInput.trim()
+                  ? "var(--tw-text-inverse)"
+                  : "var(--tw-text-tertiary)"
+              }
+            />
           </button>
         </section>
 
@@ -322,11 +406,26 @@ function Screen({ children }: { children: React.ReactNode }) {
   return <div className="tw-screen">{children}</div>;
 }
 
-function Metric({ value, suffix, tone }: { value: string; suffix?: string; tone?: string }) {
+function Metric({
+  value,
+  suffix,
+  tone,
+}: {
+  value: string;
+  suffix?: string;
+  tone?: string;
+}) {
   return (
-    <div className="tw-serif" style={{ ...metricValue, color: tone ?? 'var(--tw-text)' }}>
+    <div
+      className="tw-serif"
+      style={{ ...metricValue, color: tone ?? "var(--tw-text)" }}
+    >
       {value}
-      {suffix && <span className="tw-mono" style={metricSuffix}>{suffix}</span>}
+      {suffix && (
+        <span className="tw-mono" style={metricSuffix}>
+          {suffix}
+        </span>
+      )}
     </div>
   );
 }
@@ -341,23 +440,42 @@ function DividerLabel({ label }: { label: string }) {
   );
 }
 
-function NoteRow({ agent, headline, time, tone }: {
-  agent: 'mail' | 'calendar' | 'risk';
+function NoteRow({
+  agent,
+  headline,
+  time,
+  tone,
+}: {
+  agent: "mail" | "calendar" | "risk";
   headline: string;
   time: string;
-  tone?: 'warn';
+  tone?: "warn";
 }) {
   return (
-    <button type="button" className="tw-press" style={noteRow} aria-label={headline}>
+    <button
+      type="button"
+      className="tw-press"
+      style={noteRow}
+      aria-label={headline}
+    >
       <AgentDot agent={agent} size={8} />
-      <span style={{ ...noteHeadline, color: tone === 'warn' ? 'var(--tw-warn)' : 'var(--tw-text)' }}>{headline}</span>
-      <span className="tw-mono" style={noteTime}>{time}</span>
+      <span
+        style={{
+          ...noteHeadline,
+          color: tone === "warn" ? "var(--tw-warn)" : "var(--tw-text)",
+        }}
+      >
+        {headline}
+      </span>
+      <span className="tw-mono" style={noteTime}>
+        {time}
+      </span>
     </button>
   );
 }
 
 function BottomDock({ state, onMicPress, onMicRelease, onMicToggle }: {
-  state: ReturnType<typeof useVoice>['state'];
+  state: ReturnType<typeof useVoice>["state"];
   onMicPress: () => void;
   onMicRelease: () => void;
   onMicToggle: () => void;
@@ -384,133 +502,133 @@ function BottomDock({ state, onMicPress, onMicRelease, onMicToggle }: {
   );
 }
 
-function DockItem({ icon, active = false, onClick }: { icon: 'home' | 'inbox' | 'shield' | 'settings'; active?: boolean; onClick?: () => void }) {
+function DockItem({ icon, active = false, onClick }: { icon: "home" | "inbox" | "shield" | "settings"; active?: boolean; onClick?: () => void }) {
   const labels = {
-    home: 'Today',
-    inbox: 'Inbox',
-    shield: 'Trust controls',
-    settings: 'Settings',
+    home: "Today",
+    inbox: "Inbox",
+    shield: "Trust controls",
+    settings: "Settings",
   };
 
   return (
-    <button type="button" aria-label={labels[icon]} onClick={onClick} className="tw-press" style={{ ...dockItem, color: active ? 'var(--tw-text)' : 'var(--tw-text-tertiary)' }}>
+    <button type="button" aria-label={labels[icon]} onClick={onClick} className="tw-press" style={{ ...dockItem, color: active ? "var(--tw-text)" : "var(--tw-text-tertiary)" }}>
       <Icon name={icon} size={20} strokeWidth={active ? 2 : 1.5} />
     </button>
   );
 }
 
 const centered: React.CSSProperties = {
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'center',
-  flexDirection:  'column',
-  gap:            18,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexDirection: "column",
+  gap: 18,
 };
 
 const loadingCopy: React.CSSProperties = {
-  color:    'var(--tw-text-tertiary)',
+  color: "var(--tw-text-tertiary)",
   fontSize: 13,
 };
 
 const onboarding: React.CSSProperties = {
-  display:        'flex',
-  flexDirection:  'column',
-  justifyContent: 'space-between',
+  display: "flex",
+  flexDirection: "column",
+  justifyContent: "space-between",
 };
 
 const onboardingTop: React.CSSProperties = {
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'space-between',
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
 };
 
 const stepText: React.CSSProperties = {
-  color:    'var(--tw-text-tertiary)',
+  color: "var(--tw-text-tertiary)",
   fontSize: 11,
 };
 
 const onboardingHero: React.CSSProperties = {
-  display:       'flex',
-  flexDirection: 'column',
-  alignItems:    'flex-start',
-  gap:           24,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
+  gap: 24,
 };
 
 const onboardingTitle: React.CSSProperties = {
-  margin:     0,
-  fontSize:   54,
+  margin: 0,
+  fontSize: 54,
   lineHeight: 0.95,
 };
 
 const onboardingCopy: React.CSSProperties = {
-  margin:     0,
-  color:      'var(--tw-text-secondary)',
-  fontSize:   15,
+  margin: 0,
+  color: "var(--tw-text-secondary)",
+  fontSize: 15,
   lineHeight: 1.55,
-  maxWidth:   330,
+  maxWidth: 330,
 };
 
 const primaryButton: React.CSSProperties = {
-  width:          '100%',
-  padding:        '16px 22px',
-  borderRadius:   'var(--tw-r)',
-  background:     'var(--tw-ink-stamp)',
-  border:         'none',
-  color:          'var(--tw-text-inverse)',
-  fontSize:       14,
-  fontWeight:     700,
-  cursor:         'pointer',
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'center',
-  gap:            8,
+  width: "100%",
+  padding: "16px 22px",
+  borderRadius: "var(--tw-r)",
+  background: "var(--tw-ink-stamp)",
+  border: "none",
+  color: "var(--tw-text-inverse)",
+  fontSize: 14,
+  fontWeight: 700,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
 };
 
 const topBar: React.CSSProperties = {
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'space-between',
-  padding:        '0 8px 24px',
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "0 8px 24px",
 };
 
 const dateText: React.CSSProperties = {
-  color:    'var(--tw-text-tertiary)',
+  color: "var(--tw-text-tertiary)",
   fontSize: 11,
 };
 
 const walletStrip: React.CSSProperties = {
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'space-between',
-  gap:            12,
-  marginBottom:   26,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  marginBottom: 26,
 };
 
 const walletIdentity: React.CSSProperties = {
-  display:    'flex',
-  alignItems: 'center',
-  gap:        10,
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
 };
 
 const walletTitle: React.CSSProperties = {
-  color:      'var(--tw-text)',
-  fontSize:   13,
+  color: "var(--tw-text)",
+  fontSize: 13,
   fontWeight: 600,
 };
 
 const walletSub: React.CSSProperties = {
-  color:    'var(--tw-text-tertiary)',
+  color: "var(--tw-text-tertiary)",
   fontSize: 11,
 };
 
 const walletButton: React.CSSProperties = {
-  border:       '0.5px solid var(--tw-border)',
+  border: "0.5px solid var(--tw-border)",
   borderRadius: 999,
-  background:   'rgba(255,255,255,0.06)',
-  color:        'var(--tw-text-secondary)',
-  padding:      '9px 12px',
-  fontSize:     12,
-  cursor:       'pointer',
+  background: "rgba(255,255,255,0.06)",
+  color: "var(--tw-text-secondary)",
+  padding: "9px 12px",
+  fontSize: 12,
+  cursor: "pointer",
 };
 
 const focusedArea: React.CSSProperties = {
@@ -518,188 +636,188 @@ const focusedArea: React.CSSProperties = {
 };
 
 const headlineBlock: React.CSSProperties = {
-  padding: '0 8px 26px',
+  padding: "0 8px 26px",
 };
 
 const headline: React.CSSProperties = {
-  margin:     0,
-  color:      'var(--tw-text)',
-  fontSize:   45,
+  margin: 0,
+  color: "var(--tw-text)",
+  fontSize: 45,
   lineHeight: 0.98,
 };
 
 const featuredAction: React.CSSProperties = {
-  width:      '100%',
-  padding:    0,
-  textAlign:  'left',
-  border:     'none',
-  overflow:   'hidden',
+  width: "100%",
+  padding: 0,
+  textAlign: "left",
+  border: "none",
+  overflow: "hidden",
 };
 
 const featuredInner: React.CSSProperties = {
-  padding: '22px 22px 20px',
+  padding: "22px 22px 20px",
 };
 
 const featuredTitle: React.CSSProperties = {
-  margin:     0,
-  color:      'var(--tw-text)',
-  fontSize:   32,
+  margin: 0,
+  color: "var(--tw-text)",
+  fontSize: 32,
   lineHeight: 1.05,
 };
 
 const metricRow: React.CSSProperties = {
-  display:    'flex',
-  gap:        30,
-  marginTop:  28,
-  alignItems: 'baseline',
+  display: "flex",
+  gap: 30,
+  marginTop: 28,
+  alignItems: "baseline",
 };
 
 const metricValue: React.CSSProperties = {
-  fontSize:   30,
+  fontSize: 30,
   lineHeight: 1,
 };
 
 const metricSuffix: React.CSSProperties = {
   marginLeft: 5,
-  color:      'var(--tw-text-tertiary)',
-  fontSize:   11,
+  color: "var(--tw-text-tertiary)",
+  fontSize: 11,
   fontWeight: 600,
 };
 
 const featuredFooter: React.CSSProperties = {
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'space-between',
-  padding:        '14px 20px',
-  borderTop:      '0.5px solid var(--tw-border-hair)',
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  padding: "14px 20px",
+  borderTop: "0.5px solid var(--tw-border-hair)",
 };
 
 const reviewLink: React.CSSProperties = {
-  display:    'inline-flex',
-  alignItems: 'center',
-  gap:        6,
-  color:      'var(--tw-monad-deep)',
-  fontSize:   13,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  color: "var(--tw-monad-deep)",
+  fontSize: 13,
   fontWeight: 600,
 };
 
 const stream: React.CSSProperties = {
-  padding: '34px 8px 22px',
+  padding: "34px 8px 22px",
 };
 
 const dividerLabel: React.CSSProperties = {
-  display:        'flex',
-  alignItems:     'center',
-  gap:            10,
-  marginBottom:   8,
-  color:          'var(--tw-text-tertiary)',
-  fontSize:       10.5,
-  fontWeight:     600,
-  letterSpacing:  0.4,
-  textTransform:  'uppercase',
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  marginBottom: 8,
+  color: "var(--tw-text-tertiary)",
+  fontSize: 10.5,
+  fontWeight: 600,
+  letterSpacing: 0.4,
+  textTransform: "uppercase",
 };
 
 const dividerLine: React.CSSProperties = {
-  flex:       1,
-  height:     1,
-  background: 'var(--tw-border-hair)',
+  flex: 1,
+  height: 1,
+  background: "var(--tw-border-hair)",
 };
 
 const noteRow: React.CSSProperties = {
-  display:      'flex',
-  alignItems:   'center',
-  gap:          14,
-  width:        '100%',
-  padding:      '16px 0',
-  textAlign:    'left',
-  border:       'none',
-  borderBottom: '0.5px solid var(--tw-border-hair)',
-  background:   'transparent',
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
+  width: "100%",
+  padding: "16px 0",
+  textAlign: "left",
+  border: "none",
+  borderBottom: "0.5px solid var(--tw-border-hair)",
+  background: "transparent",
 };
 
 const noteHeadline: React.CSSProperties = {
-  flex:         1,
-  minWidth:     0,
-  fontSize:     14,
-  fontWeight:   500,
-  overflow:     'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace:   'nowrap',
+  flex: 1,
+  minWidth: 0,
+  fontSize: 14,
+  fontWeight: 500,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
 };
 
 const noteTime: React.CSSProperties = {
-  color:    'var(--tw-text-tertiary)',
+  color: "var(--tw-text-tertiary)",
   fontSize: 11,
 };
 
 const agentMessage: React.CSSProperties = {
-  margin:       '18px 0 14px',
-  color:        'var(--tw-text-secondary)',
-  background:   'rgba(255,255,255,0.06)',
-  border:       '0.5px solid var(--tw-border)',
-  borderRadius: 'var(--tw-r)',
-  padding:      '12px 14px',
-  fontSize:     12.5,
-  lineHeight:   1.45,
+  margin: "18px 0 14px",
+  color: "var(--tw-text-secondary)",
+  background: "rgba(255,255,255,0.06)",
+  border: "0.5px solid var(--tw-border)",
+  borderRadius: "var(--tw-r)",
+  padding: "12px 14px",
+  fontSize: 12.5,
+  lineHeight: 1.45,
 };
 
 const composer: React.CSSProperties = {
-  display:    'flex',
-  alignItems: 'center',
-  gap:        9,
-  padding:    '12px 0 88px',
+  display: "flex",
+  alignItems: "center",
+  gap: 9,
+  padding: "12px 0 88px",
 };
 
 const composerInput: React.CSSProperties = {
   height: 48,
-  padding: '0 15px',
+  padding: "0 15px",
 };
 
 const sendButton: React.CSSProperties = {
-  width:          48,
-  height:         48,
-  borderRadius:   'var(--tw-r)',
-  border:         'none',
-  background:     'var(--tw-ink-stamp)',
-  color:          'var(--tw-text-inverse)',
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'center',
+  width: 48,
+  height: 48,
+  borderRadius: "var(--tw-r)",
+  border: "none",
+  background: "var(--tw-ink-stamp)",
+  color: "var(--tw-text-inverse)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
 };
 
 const sendButtonDisabled: React.CSSProperties = {
   ...sendButton,
-  background: 'rgba(255,255,255,0.08)',
-  color:      'var(--tw-text-tertiary)',
-  cursor:     'not-allowed',
+  background: "rgba(255,255,255,0.08)",
+  color: "var(--tw-text-tertiary)",
+  cursor: "not-allowed",
 };
 
 const bottomDock: React.CSSProperties = {
-  position:       'fixed',
-  left:           '50%',
-  bottom:         0,
-  transform:      'translateX(-50%)',
-  width:          'min(430px, 100%)',
-  display:        'flex',
-  alignItems:     'flex-end',
-  padding:        '0 8px 28px',
-  background:     'linear-gradient(to top, var(--tw-paper) 72%, rgba(0,0,0,0))',
-  pointerEvents:  'auto',
+  position: "fixed",
+  left: "50%",
+  bottom: 0,
+  transform: "translateX(-50%)",
+  width: "min(430px, 100%)",
+  display: "flex",
+  alignItems: "flex-end",
+  padding: "0 8px 28px",
+  background: "linear-gradient(to top, var(--tw-paper) 72%, rgba(0,0,0,0))",
+  pointerEvents: "auto",
 };
 
 const dockItem: React.CSSProperties = {
-  flex:           1,
-  padding:        '16px 0 8px',
-  display:        'flex',
-  alignItems:     'center',
-  justifyContent: 'center',
-  border:         'none',
-  background:     'transparent',
+  flex: 1,
+  padding: "16px 0 8px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "none",
+  background: "transparent",
 };
 
 const dockCenter: React.CSSProperties = {
-  flex:           1,
-  display:        'flex',
-  justifyContent: 'center',
-  position:       'relative',
+  flex: 1,
+  display: "flex",
+  justifyContent: "center",
+  position: "relative",
 };
