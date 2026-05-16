@@ -271,13 +271,13 @@ function buildVoiceResponse(
   const blocked     = opps.filter(o => o.policyResult.blocked);
 
   if (recommended.length === 0 && blocked.length === 0) {
-    return `Your wallet balance is ${parseFloat(balance).toFixed(2)} MON. No eligible campaigns found right now.`;
+    return `Cüzdan bakiyen ${parseFloat(balance).toFixed(2)} MON. Şu an için uygun bir kampanya bulamadım.`;
   }
 
   if (recommended.length === 0 && blocked.length > 0) {
-    return `Your wallet balance is ${parseFloat(balance).toFixed(2)} MON. I found ${blocked.length} campaign${blocked.length > 1 ? 's' : ''} but blocked them all because they exceed your risk settings or policy rules. Check the details on screen.`;
+    return `Cüzdan bakiyen ${parseFloat(balance).toFixed(2)} MON. ${blocked.length} adet kampanya buldum ancak risk ayarlarını aştığı veya güvenlik kurallarına takıldığı için hepsini engelledim. Detayları ekranda görebilirsin.`;
   }
 
   const top = recommended[0];
-  return `Your wallet has ${parseFloat(balance).toFixed(2)} MON. Best opportunity: ${top.campaign.name}. ${top.explanation} Select it on screen to prepare the claim.`;
+  return `Cüzdanında ${parseFloat(balance).toFixed(2)} MON var. En iyi fırsat: ${top.campaign.name}. ${top.explanation} İşlemi hazırlamam için ekrandan seçebilirsin.`;
 }

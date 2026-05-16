@@ -113,14 +113,14 @@ function buildExplanation(
   profile: UserProfile
 ): string {
   if (policy.blocked) {
-    return policy.blockReason ?? 'This action has been blocked by the Policy Engine.';
+    return policy.blockReason ?? 'Bu işlem Policy Engine tarafından bloklandı.';
   }
 
   const parts: string[] = [];
-  parts.push(`${c.rewardMON} MON reward for roughly ${c.estimatedMinutes} minute${c.estimatedMinutes > 1 ? 's' : ''} of work.`);
-  if (hoursLeft < 24) parts.push(`Deadline in ${Math.round(hoursLeft)} hours — act soon.`);
+  parts.push(`Yaklaşık ${c.estimatedMinutes} dakikalık işlem için ${c.rewardMON} MON ödül veriyor.`);
+  if (hoursLeft < 24) parts.push(`Son katılım tarihi ${Math.round(hoursLeft)} saat içinde doluyor, acele etsen iyi olur.`);
   if (policy.warnings.length) parts.push(policy.warnings[0]);
-  parts.push(`Risk level: ${c.riskLevel}.`);
+  parts.push(`Risk seviyesi: ${c.riskLevel === 'low' ? 'düşük' : c.riskLevel === 'medium' ? 'orta' : 'yüksek'}.`);
 
   return parts.join(' ');
 }
